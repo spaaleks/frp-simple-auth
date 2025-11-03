@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-22.04-arm64
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure build script is executable
+        run: chmod +x bin/buildAnyPlatform.sh
+
+      - name: Clean dist
+        run: rm -rf dist && mkdir dist
+
+      - name: Build ${{ matrix.platform }} binary
+        run: bin/buildAnyPlatform.sh ${{ matrix.platform }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-simple-auth-${{ matrix.arch }}
+          path: dist/frp-simple-auth.${{ replace(matrix.platform, '/', '-') }}
+          if-no-files-found: error
+
+      - name: Docker build smoke test
+        if: ${{ matrix.arch == 'amd64' }}
+        run: docker build -f .build/Dockerfile -t frp-simple-auth:test .

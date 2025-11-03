@@ -1,0 +1,16 @@
+globalDeny:
+  proxyTypes: ["udp"]
+  remotePorts:
+    - "1-1023"
+  domains:
+    - "*.blocked.example"
+
+users:
+  - user: "alice"
+    password: "s3cret"
+    allow:
+      proxyTypes: ["http", "https"]
+      remotePorts: ["2000-2100", "5432"]
+      domains:
+        - "example.com"
+        - "*.internal.example.com"

@@ -1,0 +1,103 @@
+name: Publish Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - feature/initial-commit
+    tags:
+      - '*'
+  workflow_dispatch:
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      DOCKERHUB_USER: ${{ vars.DOCKERHUB_USER }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+    outputs:
+      tag: ${{ steps.compute.outputs.tag }}
+    steps:
+      - name: Validate Docker Hub secrets
+        run: |
+          set -euo pipefail
+          for var in DOCKERHUB_USER DOCKERHUB_PASSWORD DOCKERHUB_IMAGE; do
+            if [ -z "${!var}" ]; then
+              echo "Missing secret: $var" >&2
+              exit 1
+            fi
+          done
+
+      - name: Compute image tag
+        id: compute
+        env:
+          IMAGE: ${{ env.DOCKERHUB_IMAGE }}
+        run: |
+          set -euo pipefail
+          ref="${GITHUB_REF}"
+          sha_short="$(printf '%s' "${GITHUB_SHA}" | cut -c1-7)"
+          if [[ "${ref}" == refs/tags/* ]]; then
+            ref_name="${ref#refs/tags/}"
+          else
+            ref_name="${GITHUB_REF_NAME}"
+          fi
+          slug="$(printf '%s' "${ref_name}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g')"
+          if [[ "${ref}" == refs/tags/* ]]; then
+            suffix=":${ref_name}"
+          elif [[ "${ref_name}" == "main" ]]; then
+            suffix=":latest"
+          else
+            [[ -z "${slug}" ]] && slug="sha-${sha_short}"
+            suffix=":${slug}"
+          fi
+          echo "tag=docker.io/${IMAGE}${suffix}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-22.04-arm64
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    env:
+      DOCKERHUB_USER: ${{ vars.DOCKERHUB_USER }}
+      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      BASE_TAG: ${{ needs.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USER }}
+          password: ${{ env.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push ${{ matrix.arch }}
+        env:
+          BASE_TAG: ${{ env.BASE_TAG }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_TAG:-}" ]; then
+            echo "BASE_TAG missing" >&2
+            exit 1
+          fi
+          ARCH_TAG="${BASE_TAG}-${{ matrix.arch }}"
+          docker build -f .build/Dockerfile -t "${ARCH_TAG}" .
+          docker push "${ARCH_TAG}"
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            docker tag "${ARCH_TAG}" "${BASE_TAG}"
+            docker push "${BASE_TAG}"
+          fi
