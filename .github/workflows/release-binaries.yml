@@ -1,0 +1,72 @@
+name: Release Binaries
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-22.04-arm64
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure build script is executable
+        run: chmod +x bin/buildAnyPlatform.sh
+
+      - name: Clean dist
+        run: rm -rf dist && mkdir dist
+
+      - name: Build ${{ matrix.platform }} binary
+        run: bin/buildAnyPlatform.sh ${{ matrix.platform }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frp-simple-auth-${{ matrix.arch }}
+          path: dist/frp-simple-auth.${{ replace(matrix.platform, '/', '-') }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: frp-simple-auth-*
+          merge-multiple: true
+          path: release
+
+      - name: Prepare files
+        run: |
+          set -euo pipefail
+          ls -l release
+          cp release/frp-simple-auth.linux-amd64 release/frp-simple-auth
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/frp-simple-auth
+            release/frp-simple-auth.linux-amd64
+            release/frp-simple-auth.linux-arm64
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
