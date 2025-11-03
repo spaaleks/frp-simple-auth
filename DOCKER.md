@@ -114,5 +114,5 @@ The image bundles the PyInstaller-built binary at `/usr/local/bin/frp-simple-aut
 
 ## Source & License
 
-- Source: [github.com/spaleks/frp-simple-auth](https://github.com/spaleks/frp-simple-auth)
+- Source: [github.com/spaaleks/frp-simple-auth](https://github.com/spaaleks/frp-simple-auth)
 - License: MIT

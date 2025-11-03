@@ -9,39 +9,30 @@ on:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            platform: linux/amd64
-            arch: amd64
-          - runner: ubuntu-22.04-arm64
-            platform: linux/arm64
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Ensure build script is executable
         run: chmod +x bin/buildAnyPlatform.sh
 
-      - name: Clean dist
-        run: rm -rf dist && mkdir dist
+      - name: Build linux/amd64 and linux/arm64 binaries
+        run: bin/buildAnyPlatform.sh linux/amd64 linux/arm64
 
-      - name: Build ${{ matrix.platform }} binary
-        run: bin/buildAnyPlatform.sh ${{ matrix.platform }}
-
-      - name: Upload binary
+      - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: frp-simple-auth-${{ matrix.arch }}
-          path: dist/frp-simple-auth.${{ replace(matrix.platform, '/', '-') }}
+          name: frp-simple-auth-binaries
+          path: |
+            dist/frp-simple-auth.linux-amd64
+            dist/frp-simple-auth.linux-arm64
           if-no-files-found: error
 
-      - name: Docker build smoke test
-        if: ${{ matrix.arch == 'amd64' }}
+      - name: Docker build smoke test (amd64)
         run: docker build -f .build/Dockerfile -t frp-simple-auth:test .
