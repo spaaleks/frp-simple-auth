@@ -31,7 +31,7 @@ for TARGET_PLATFORM in "${PLATFORMS[@]}"; do
     -v "${PWD}":/src \
     -w /src \
     -e OUTPUT_PATH="${OUTPUT_NAME}" \
-    python:3.12-slim \
+    python:3.12-slim-bullseye \
     bash -lc '
       set -euo pipefail
       apt-get update && apt-get install -y binutils && rm -rf /var/lib/apt/lists/*
