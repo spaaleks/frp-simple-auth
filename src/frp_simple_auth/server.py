@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from .config import get_global_deny, get_user, list_users
 from .models import FrpLoginReq
 from .policy import all_domains_allowed, any_domain_forbidden, port_allowed, port_in_ranges
-from .reloader import install_signal_handler, safe_reload, start_config_watcher
+from .reloader import install_signal_handler, safe_reload, start_config_watcher, stop_config_watcher
 from .settings import LISTEN_HOST, LISTEN_PORT, log
 
 app = FastAPI()
@@ -133,6 +133,11 @@ async def handler(request: Request):
 def _startup():
     start_config_watcher()
     log.info("listening on %s:%d", LISTEN_HOST, LISTEN_PORT)
+
+
+@app.on_event("shutdown")
+def _shutdown():
+    stop_config_watcher()
 
 
 def main() -> None:
