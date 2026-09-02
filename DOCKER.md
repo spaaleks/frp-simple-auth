@@ -20,10 +20,10 @@ A lightweight FastAPI service that implements FRP’s HTTP plugin for authentica
 ```bash
 docker run --rm \
   -p 7005:7005 \
-  -v "$(pwd)/auth.yml:/app/auth.yml:ro" \
+  -v "$(pwd)/config:/config:ro" \
   -e FRP_AUTH_LISTEN_HOST=0.0.0.0 \
-  -e FRP_AUTH_CONFIG=/app/auth.yml \
-  spaleks/frp-simple-auth:latest
+  -e FRP_AUTH_CONFIG=/config/auth.yml \
+  spaaleks/frp-simple-auth:latest
 ```
 
 - Default listen port inside the container: `7005`
@@ -31,24 +31,26 @@ docker run --rm \
 - Manual reload: `POST /reload`
 - Set `FRP_AUTH_CONFIG` if you mount the config somewhere else.
 
+> **Mount the directory, not the file.** A single-file bind mount (`-v ./auth.yml:/app/auth.yml`) pins one inode, so any editor that saves by replacing the file detaches the mount and the container stops seeing changes altogether. Mounting the parent directory keeps hot-reload working with every editor.
+
 ---
 
 ## Docker Compose
 
 ```yaml
 services:
-  frp-auth:
-    image: spaleks/frp-simple-auth:latest
-    container_name: frp-simple-auth
-    restart: unless-stopped
-    environment:
-      - FRP_AUTH_LISTEN_HOST=0.0.0.0
-      - FRP_AUTH_LISTEN_PORT=7005
-      - FRP_AUTH_CONFIG=/app/auth.yml
-    volumes:
-      - ./auth.yml:/app/auth.yml:ro
-    ports:
-      - "7005:7005"
+    frp-auth:
+        image: spaaleks/frp-simple-auth:latest
+        container_name: frp-simple-auth
+        restart: unless-stopped
+        environment:
+            - FRP_AUTH_LISTEN_HOST=0.0.0.0
+            - FRP_AUTH_LISTEN_PORT=7005
+            - FRP_AUTH_CONFIG=/config/auth.yml
+        volumes:
+            - ./config:/config:ro
+        ports:
+            - "7005:7005"
 ```
 
 ---
@@ -57,12 +59,12 @@ services:
 
 ```yaml
 httpPlugins:
-  - name: auth
-    addr: 127.0.0.1:7005
-    path: /handler
-    ops:
-      - Login
-      - NewProxy
+    - name: auth
+      addr: 127.0.0.1:7005
+      path: /handler
+      ops:
+          - Login
+          - NewProxy
 ```
 
 Ensure your FRP server can reach the container (same host or network route).
@@ -71,12 +73,13 @@ Ensure your FRP server can reach the container (same host or network route).
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FRP_AUTH_CONFIG` | `./auth.yml` | Path to the YAML policy file |
-| `FRP_AUTH_LISTEN_HOST` | `127.0.0.1` | Bind address |
-| `FRP_AUTH_LISTEN_PORT` | `7005` | Service port |
-| `LOGLEVEL` | `INFO` | Python logging level |
+| Variable               | Default      | Description                  |
+| ---------------------- | ------------ | ---------------------------- |
+| `FRP_AUTH_CONFIG`      | `./auth.yml` | Path to the YAML policy file |
+| `FRP_AUTH_LISTEN_HOST` | `127.0.0.1`  | Bind address                 |
+| `FRP_AUTH_LISTEN_PORT` | `7005`       | Service port                 |
+| `FRP_AUTH_CONFIG_POLL_SEC` | `2`      | Config stat-poll interval; `0` disables |
+| `LOGLEVEL`             | `INFO`       | Python logging level         |
 
 `.env` files are honored thanks to `python-dotenv`.
 
@@ -86,23 +89,23 @@ Ensure your FRP server can reach the container (same host or network route).
 
 ```yaml
 globalDeny:
-  proxyTypes: ["udp"]
-  remotePorts: ["1-1023"]
-  domains:
-    - "*.blocked.example"
+    proxyTypes: ["udp"]
+    remotePorts: ["1-1023"]
+    domains:
+        - "*.blocked.example"
 
 users:
-  - user: "alice"
-    password: "s3cret"
-    allow:
-      proxyTypes: ["http", "https"]
-      remotePorts: ["2000-2100", "5432"]
-      domains:
-        - "example.com"
-        - "*.internal.example.com"
+    - user: "alice"
+      password: "s3cret"
+      allow:
+          proxyTypes: ["http", "https"]
+          remotePorts: ["2000-2100", "5432"]
+          domains:
+              - "example.com"
+              - "*.internal.example.com"
 ```
 
-Changes to `auth.yml` trigger an automatic reload (inotify + SIGHUP).
+Changes to `auth.yml` trigger an automatic reload: inotify picks up edits immediately, and a stat poll (`FRP_AUTH_CONFIG_POLL_SEC`, default 2s) catches in-place writes that inotify misses through a bind mount. `POST /reload` and `SIGHUP` force a reload on demand. Invalid YAML is logged and the last good config stays active until the file is valid again.
 
 ---
 

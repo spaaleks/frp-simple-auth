@@ -10,7 +10,7 @@ A lightweight HTTP plugin backend for [frp](https://github.com/fatedier/frp) tha
 - Global deny-lists for proxy types, ports, and domains
 - User-level allowlists for proxy types, TCP/UDP port ranges, and HTTP(S) domains (wildcards supported)
 - FastAPI endpoints compatible with frp’s HTTP plugin (`/handler`, `/health`, `/reload`)
-- File watcher + `SIGHUP` handling for zero-downtime config updates
+- File watcher + stat-poll fallback + `SIGHUP` handling for zero-downtime config updates
 - Environment-variable overrides for listen host/port and config path
 - Multi-arch Docker images (linux/amd64, linux/arm64)
 
@@ -25,30 +25,33 @@ Get up and running quickly by mounting your policy file and letting Docker handl
 ```bash
 docker run --rm \
   -p 7005:7005 \
-  -v "$(pwd)/auth.yml:/app/auth.yml:ro" \
+  -v "$(pwd)/config:/config:ro" \
   -e FRP_AUTH_LISTEN_HOST=0.0.0.0 \
+  -e FRP_AUTH_CONFIG=/config/auth.yml \
   ghcr.io/<your-org>/frp-simple-auth:latest
 ```
 
-The container bundles the PyInstaller binary and expects `auth.yml` in `/app`.
+The container bundles the PyInstaller binary and reads `auth.yml` from `FRP_AUTH_CONFIG` (default `/app/auth.yml`).
+
+> **Mount the directory, not the file.** A single-file bind mount (`-v ./auth.yml:/app/auth.yml`) pins one inode, so any editor that saves by replacing the file detaches the mount and the container stops seeing changes altogether. Mounting the parent directory keeps hot-reload working with every editor.
 
 ### Docker Compose
 
 ```yaml
 services:
-  frp-auth:
-    image: spaleks/frp-simple-auth:latest
-    # or quay.io/spaleks/frp-simple-auth:latest
-    container_name: frp-simple-auth
-    restart: unless-stopped
-    environment:
-      - FRP_AUTH_LISTEN_HOST=0.0.0.0
-      - FRP_AUTH_LISTEN_PORT=7005
-      - FRP_AUTH_CONFIG=/app/auth.yml
-    volumes:
-      - ./auth.yml:/app/auth.yml:ro
-    ports:
-      - "7005:7005"
+    frp-auth:
+        image: spaaleks/frp-simple-auth:latest
+        # or quay.io/spaaleks/frp-simple-auth:latest
+        container_name: frp-simple-auth
+        restart: unless-stopped
+        environment:
+            - FRP_AUTH_LISTEN_HOST=0.0.0.0
+            - FRP_AUTH_LISTEN_PORT=7005
+            - FRP_AUTH_CONFIG=/config/auth.yml
+        volumes:
+            - ./config:/config:ro
+        ports:
+            - "7005:7005"
 ```
 
 ---
@@ -58,7 +61,7 @@ services:
 1. Edit `auth.yml` and define users, passwords, and allowed policies.
 2. Start the service (locally or via Docker).
 3. Configure your frp server to use the HTTP plugin pointing to `/handler`.
-4. Reload the service by editing `auth.yml` — changes auto-apply thanks to the file watcher.
+4. Reload the service by editing `auth.yml` — changes auto-apply thanks to the file watcher and stat-poll fallback.
 5. Monitor `/health` to confirm active users or POST to `/reload` if you need a manual refresh.
 
 ### Example frps (`/etc/frp/frps.yaml`)
@@ -70,38 +73,38 @@ vhostHTTPPort: 80
 vhostHTTPSPort: 443
 
 webServer:
-  addr: "0.0.0.0"
-  port: 7500
-  user: "admin"
-  password: "change-me"
+    addr: "0.0.0.0"
+    port: 7500
+    user: "admin"
+    password: "change-me"
 
 httpPlugins:
-  - name: "auth"
-    addr: "127.0.0.1:7005"     # frp-simple-auth service
-    path: "/handler"
-    ops:
-      - Login
-      - NewProxy
+    - name: "auth"
+      addr: "127.0.0.1:7005" # frp-simple-auth service
+      path: "/handler"
+      ops:
+          - Login
+          - NewProxy
 ```
 
 ## Configuration (`auth.yml`)
 
 ```yaml
 globalDeny:
-  proxyTypes: ["udp"]
-  remotePorts: ["1-1023"]
-  domains:
-    - "*.blocked.example"
+    proxyTypes: ["udp"]
+    remotePorts: ["1-1023"]
+    domains:
+        - "*.blocked.example"
 
 users:
-  - user: "alice"
-    password: "s3cret"
-    allow:
-      proxyTypes: ["http", "https"]
-      remotePorts: ["2000-2100", "5432"]
-      domains:
-        - "example.com"
-        - "*.internal.example.com"
+    - user: "alice"
+      password: "s3cret"
+      allow:
+          proxyTypes: ["http", "https"]
+          remotePorts: ["2000-2100", "5432"]
+          domains:
+              - "example.com"
+              - "*.internal.example.com"
 ```
 
 - `globalDeny` – Hard bans evaluated before user-level policies (proxy types, port ranges, domains).
@@ -109,7 +112,7 @@ users:
 - `remotePorts` – Single ports or ranges for TCP/UDP proxies.
 - `domains` – Allowed HTTP(S) domains; wildcards start with `*.`.
 
-Changes to `auth.yml` are applied instantly via watchdog and `SIGHUP`.
+Changes to `auth.yml` are applied automatically: watchdog/inotify picks up edits immediately, and a stat poll (`FRP_AUTH_CONFIG_POLL_SEC`, default 2s) catches in-place writes that inotify misses through a bind mount. `POST /reload` and `SIGHUP` force a reload on demand. Invalid YAML is logged and the last good config stays active until the file parses again.
 
 ---
 
@@ -135,14 +138,18 @@ The service listens on `127.0.0.1:7005` by default. Point your frp server’s HT
 ## Environment Variables
 
 ### Core
+
 - `FRP_AUTH_CONFIG` – Path to the YAML config (default: `./auth.yml`)
 - `FRP_AUTH_LISTEN_HOST` – Host/IP to bind (default: `127.0.0.1`)
 - `FRP_AUTH_LISTEN_PORT` – Port to bind (default: `7005`)
+- `FRP_AUTH_CONFIG_POLL_SEC` – Config stat-poll interval in seconds (default: `2`, `0` disables)
 
 ### Logging
+
 - `LOGLEVEL` – Python log level (`INFO`, `DEBUG`, …)
 
 ### Misc
+
 - `.env` support via `python-dotenv`; any key in `.env` overrides runtime defaults.
 
 ---
