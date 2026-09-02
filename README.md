@@ -36,19 +36,19 @@ The container bundles the PyInstaller binary and expects `auth.yml` in `/app`.
 
 ```yaml
 services:
-  frp-auth:
-    image: spaleks/frp-simple-auth:latest
-    # or quay.io/spaleks/frp-simple-auth:latest
-    container_name: frp-simple-auth
-    restart: unless-stopped
-    environment:
-      - FRP_AUTH_LISTEN_HOST=0.0.0.0
-      - FRP_AUTH_LISTEN_PORT=7005
-      - FRP_AUTH_CONFIG=/app/auth.yml
-    volumes:
-      - ./auth.yml:/app/auth.yml:ro
-    ports:
-      - "7005:7005"
+    frp-auth:
+        image: spaaleks/frp-simple-auth:latest
+        # or quay.io/spaaleks/frp-simple-auth:latest
+        container_name: frp-simple-auth
+        restart: unless-stopped
+        environment:
+            - FRP_AUTH_LISTEN_HOST=0.0.0.0
+            - FRP_AUTH_LISTEN_PORT=7005
+            - FRP_AUTH_CONFIG=/app/auth.yml
+        volumes:
+            - ./auth.yml:/app/auth.yml:ro
+        ports:
+            - "7005:7005"
 ```
 
 ---
@@ -70,38 +70,38 @@ vhostHTTPPort: 80
 vhostHTTPSPort: 443
 
 webServer:
-  addr: "0.0.0.0"
-  port: 7500
-  user: "admin"
-  password: "change-me"
+    addr: "0.0.0.0"
+    port: 7500
+    user: "admin"
+    password: "change-me"
 
 httpPlugins:
-  - name: "auth"
-    addr: "127.0.0.1:7005"     # frp-simple-auth service
-    path: "/handler"
-    ops:
-      - Login
-      - NewProxy
+    - name: "auth"
+      addr: "127.0.0.1:7005" # frp-simple-auth service
+      path: "/handler"
+      ops:
+          - Login
+          - NewProxy
 ```
 
 ## Configuration (`auth.yml`)
 
 ```yaml
 globalDeny:
-  proxyTypes: ["udp"]
-  remotePorts: ["1-1023"]
-  domains:
-    - "*.blocked.example"
+    proxyTypes: ["udp"]
+    remotePorts: ["1-1023"]
+    domains:
+        - "*.blocked.example"
 
 users:
-  - user: "alice"
-    password: "s3cret"
-    allow:
-      proxyTypes: ["http", "https"]
-      remotePorts: ["2000-2100", "5432"]
-      domains:
-        - "example.com"
-        - "*.internal.example.com"
+    - user: "alice"
+      password: "s3cret"
+      allow:
+          proxyTypes: ["http", "https"]
+          remotePorts: ["2000-2100", "5432"]
+          domains:
+              - "example.com"
+              - "*.internal.example.com"
 ```
 
 - `globalDeny` – Hard bans evaluated before user-level policies (proxy types, port ranges, domains).
@@ -135,14 +135,17 @@ The service listens on `127.0.0.1:7005` by default. Point your frp server’s HT
 ## Environment Variables
 
 ### Core
+
 - `FRP_AUTH_CONFIG` – Path to the YAML config (default: `./auth.yml`)
 - `FRP_AUTH_LISTEN_HOST` – Host/IP to bind (default: `127.0.0.1`)
 - `FRP_AUTH_LISTEN_PORT` – Port to bind (default: `7005`)
 
 ### Logging
+
 - `LOGLEVEL` – Python log level (`INFO`, `DEBUG`, …)
 
 ### Misc
+
 - `.env` support via `python-dotenv`; any key in `.env` overrides runtime defaults.
 
 ---
